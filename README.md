@@ -9,7 +9,7 @@ AmxModX 1.8.2 и выше.
 
 ## Установка
 ```python
-Скомпилировать AmxxClassRegeneration.sma (Используйте компилятор 1.9.0)
+Скомпилировать AmxxClassRegeneration.sma
 Переместить плагин в папку plugins
 Прописать в plugins.ini строчку AmxxClassRegeneration.amxx
 ```
