@@ -44,6 +44,11 @@ public plugin_init() {
 		.author = szPlInf[2]
 	);
 
+	UTIL_Hook();
+	UTIL_Cvars();
+}
+
+public plugin_precache() {
 	g_iClassID = zp_register_zombie_class(
 		.name = ZclassInfo[0],
 		.info = ZclassInfo[1],
@@ -54,9 +59,6 @@ public plugin_init() {
 		.gravity = str_to_float(ZclassInfo[6]),
 		.knockback = str_to_float(ZclassInfo[7])
 	);
-
-	UTIL_Hook();
-	UTIL_Cvars();
 }
 
 public UTIL_Hook() {
