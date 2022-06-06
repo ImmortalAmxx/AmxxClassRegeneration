@@ -1,3 +1,17 @@
+/*
+	changelog: 
+		- v1.0 - Релиз.
+		- v1.1: 
+			- Добавлен квар "zp43_zclass_regen_nemesis" (Регенерация для немезиды); 
+			- Поправлен и переработан квар "zp43_zclass_regen_duration" (Возможность бесконечной регенерации);
+		- v1.2:
+			- Попавлен квар "zp43_zclass_regen_nemesis" - (Выставляло хп зомби класса);
+			- Теперь, после того, как игрок стал человеком или вышел - регенерация убирается (Ранее этого не было предусмотренно);
+
+	gratitude:
+		b0t. - За помощь в реализации.
+*/
+
 #include <AmxModX>
 #include <ZombiePlague>
 //#tryinclude <ReApi> //закомментируйте если не используйте ReAPI
@@ -9,7 +23,7 @@
 
 new const szPlInf[][] = {
 	"[ZP 4.3] ZClass: Regeneration",
-	"1.0",
+	"1.1",
 	"ImmortalAmxx"
 };
 
@@ -32,7 +46,9 @@ enum {
 enum _:Cvars {
 	DURATION,
 	Float:HEALTH_COUNT,
-	Float:START_TIME
+	Float:START_TIME,
+	NEMESIS,
+	Float:MAX_REGEN_HEALTH
 };
 
 new g_pCvars[Cvars],g_iClassID;
@@ -47,6 +63,9 @@ public plugin_init() {
 	UTIL_Hook();
 	UTIL_Cvars();
 }
+
+public client_disconnected(pPlayer)
+	RemoveRegeneration(pPlayer);
 
 public plugin_precache() {
 	g_iClassID = zp_register_zombie_class(
@@ -72,10 +91,10 @@ public UTIL_Hook() {
 public UTIL_Cvars() {
 	bind_pcvar_num(create_cvar(
 		.name = "zp43_zclass_regen_duration",
-		.string = "5.0",
-		.description = "Время регенерации.",
+		.string = "5",
+		.description = "Время регенерации. 0 - Бесконечно",
 		.has_min = true,
-		.min_val = 1.0
+		.min_val = 0.0
 	), g_pCvars[DURATION]);
 
 	bind_pcvar_float(create_cvar(
@@ -93,48 +112,74 @@ public UTIL_Cvars() {
 		.has_min = true,
 		.min_val = 1.0
 	), g_pCvars[START_TIME]);
+	
+	bind_pcvar_num(create_cvar(
+		.name = "zp43_zclass_regen_nemesis",
+		.string = "1",
+		.description = "Давать регенерацию немезиде? 0 - Нет, 1 - Да.",
+		.has_min = true,
+		.min_val = 0.0,
+		.has_max = true,
+		.max_val = 1.0
+	), g_pCvars[NEMESIS]);	
 
 	AutoExecConfig(.autoCreate = true, .name = "AmxxClassRegeneration", .folder = "ImmortalAmxx"); 
 }
 
-public CBase_Player_TakeDamage_Post(iPlayer) {
+public CBase_Player_TakeDamage_Post(pPlayer) {
 	if(
-		!is_user_connected(iPlayer) || 
-		!zp_get_user_zombie(iPlayer) ||
-		zp_get_user_nemesis(iPlayer) ||
-		zp_get_user_zombie_class(iPlayer) != g_iClassID
+		!is_user_connected(pPlayer) || 
+		!zp_get_user_zombie(pPlayer) ||
+		zp_get_user_zombie_class(pPlayer) != g_iClassID
 	)
 		return;
-
-	if(task_exists(iPlayer + TASKID_REGEN)) 
-		remove_task(iPlayer + TASKID_REGEN);
-
-	if(task_exists(iPlayer + TASKID_REGEN_START)) 
-		remove_task(iPlayer + TASKID_REGEN_START);
 		
-	set_task(g_pCvars[START_TIME], "CTask_RegenStart", iPlayer + TASKID_REGEN_START);
+	if(!g_pCvars[NEMESIS]) {
+		if(zp_get_user_nemesis(pPlayer))
+			return;
+	}
+
+	RemoveRegeneration(pPlayer);
+		
+	set_task(g_pCvars[START_TIME], "CTask_RegenStart", pPlayer + TASKID_REGEN_START);
 }
 
-public CTask_RegenStart(iPlayer) {
-	iPlayer -= TASKID_REGEN_START;
+public CTask_RegenStart(pPlayer) {
+	pPlayer -= TASKID_REGEN_START;
 
-	if(!is_user_connected(iPlayer))
-		return;
-
-	set_task(1.0, "CTask_Regeneration", iPlayer + TASKID_REGEN, .flags = "a", .repeat = g_pCvars[DURATION]);
-}
-
-public CTask_Regeneration(iPlayer) {
-	iPlayer -= TASKID_REGEN;
-
-	if(!is_user_connected(iPlayer))
+	if(!is_user_connected(pPlayer))
 		return;
 	
+	if(!g_pCvars[DURATION])
+		set_task(1.0, "CTask_Regeneration", pPlayer + TASKID_REGEN, .flags = "b");
+	else
+		set_task(1.0, "CTask_Regeneration", pPlayer + TASKID_REGEN, .flags = "a", .repeat = g_pCvars[DURATION]);
+}
+
+public CTask_Regeneration(pPlayer) {
+	pPlayer -= TASKID_REGEN;
+
+	if(!is_user_connected(pPlayer))
+		return;
+	
+	new pCvar = get_cvar_num("zp_nem_health");
+
 	#if defined _reapi_included
-		new Float:fHp = floatclamp((Float:get_entvar(iPlayer,var_health) + g_pCvars[HEALTH_COUNT]),1.0,str_to_float(ZclassInfo[4]));
-		set_entvar(iPlayer, var_health, fHp);
+		new Float:fHp = floatclamp((Float:get_entvar(pPlayer,var_health) + g_pCvars[HEALTH_COUNT]), 1.0, zp_get_user_nemesis(pPlayer) ? float(pCvar) : str_to_float(ZclassInfo[4]));
+		set_entvar(pPlayer, var_health, fHp);
 	#else
-		new Float:fHp = floatclamp((pev(iPlayer,pev_health) + g_pCvars[HEALTH_COUNT]), 1.0, str_to_float(ZclassInfo[4]));
-		set_pev(iPlayer, pev_health, fHp);
+		new Float:fHp = floatclamp((pev(pPlayer,pev_health) + g_pCvars[HEALTH_COUNT]), 1.0, zp_get_user_nemesis(pPlayer) ? float(pCvar) : str_to_float(ZclassInfo[4]));
+		set_pev(pPlayer, pev_health, fHp);
 	#endif
+}
+
+public zp_user_humanized_post(pPlayer) 
+	RemoveRegeneration(pPlayer);
+
+public RemoveRegeneration(pPlayer) {
+	if(task_exists(pPlayer + TASKID_REGEN)) 
+		remove_task(pPlayer + TASKID_REGEN);
+
+	if(task_exists(pPlayer + TASKID_REGEN_START)) 
+		remove_task(pPlayer + TASKID_REGEN_START);	
 }
